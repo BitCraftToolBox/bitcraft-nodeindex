@@ -9,7 +9,11 @@ WORKDIR /app
 COPY generate.py /app/
 RUN python generate.py
 
-FROM rust:1.91.0-bookworm AS runner
+FROM debian:bookworm AS runner
+
+LABEL org.opencontainers.image.source="https://github.com/BitCraftToolBox/bitcraft-nodeindex"
+LABEL org.opencontainers.image.description="Node tracking backend for bitcraftmap.com"
+
 WORKDIR /app
 COPY --from=builder /app/target/release/nodeindex /app/
 COPY --from=config /app/config.json /app/
