@@ -4,12 +4,12 @@ COPY Cargo.* /app
 COPY src/ ./src
 RUN cargo build --release -p nodeindex
 
-FROM python:3.14-bookworm AS config
+FROM python:3.14-slim-bookworm AS config
 WORKDIR /app
 COPY generate.py /app/
 RUN python generate.py
 
-FROM debian:bookworm AS runner
+FROM debian:bookworm-slim AS runner
 
 LABEL org.opencontainers.image.source="https://github.com/BitCraftToolBox/bitcraft-nodeindex"
 LABEL org.opencontainers.image.description="Node tracking backend for bitcraftmap.com"
