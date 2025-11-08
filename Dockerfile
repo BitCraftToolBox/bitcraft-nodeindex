@@ -48,13 +48,13 @@ RUN apk add --no-cache ca-certificates
 
 WORKDIR /app
 
-# Copy the statically linked binary
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/nodeindex /app/
-COPY --from=config /app/config.json /app/
-
 # Create non-root user for security
 RUN addgroup -g 1000 appuser && \
     adduser -D -u 1000 -G appuser appuser
+
+# Copy the statically linked binary with correct ownership
+COPY --from=builder --chown=appuser:appuser /app/target/x86_64-unknown-linux-musl/release/nodeindex /app/
+COPY --from=config --chown=appuser:appuser /app/config.json /app/
 
 USER appuser
 
