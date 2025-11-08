@@ -1,28 +1,41 @@
 mod config;
-mod subscription;
 mod database;
+mod subscription;
 use crate::{config::*, database::*, subscription::*};
 
-use std::sync::Arc;
-use bindings::{sdk::DbContext, region::*, ext::ctx::*};
-use anyhow::{anyhow, Error, Result};
-use axum::{Router, Json, routing::get, http::StatusCode, extract::{Path, State, Query}};
+use anyhow::{Error, Result, anyhow};
 use axum::http::{HeaderValue, Method};
 use axum::response::IntoResponse;
+use axum::{
+    Json, Router,
+    extract::{Path, Query, State},
+    http::StatusCode,
+    routing::get,
+};
+use bindings::{ext::ctx::*, region::*, sdk::DbContext};
 use serde::Deserialize;
+use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::{oneshot, mpsc::unbounded_channel, Mutex};
+use tokio::sync::{Mutex, mpsc::unbounded_channel, oneshot};
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info};
 
-struct Shutdown { triggered: bool, tx: Vec<oneshot::Sender<()>> }
+struct Shutdown {
+    triggered: bool,
+    tx: Vec<oneshot::Sender<()>>,
+}
 impl Shutdown {
     pub fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self { triggered: false, tx: Vec::new() }))
+        Arc::new(Mutex::new(Self {
+            triggered: false,
+            tx: Vec::new(),
+        }))
     }
     fn register(&mut self) -> Option<oneshot::Receiver<()>> {
-        if self.triggered { return None }
+        if self.triggered {
+            return None;
+        }
 
         let (tx, rx) = oneshot::channel();
         self.tx.push(tx);
@@ -30,7 +43,9 @@ impl Shutdown {
     }
     fn trigger(&mut self) {
         self.triggered = true;
-        for tx in self.tx.drain(..) { let _ = tx.send(()); }
+        for tx in self.tx.drain(..) {
+            let _ = tx.send(());
+        }
     }
 }
 
@@ -52,16 +67,30 @@ async fn main() {
     register_ctrl_c(shutdown.clone());
 
     let mut queries = Vec::new();
-    if !state.enemy.is_empty() { queries.push(Subscription::ENEMY) }
-    for id in state.resource.keys() { queries.push(Subscription::RESOURCE(*id)) }
+    if !state.enemy.is_empty() {
+        queries.push(Subscription::ENEMY)
+    }
+    for id in state.resource.keys() {
+        queries.push(Subscription::RESOURCE(*id))
+    }
 
     let (con, server) = tokio::join!(
-        spawn(db(db_config, queries, state.clone(), shutdown.clone()), &shutdown),
-        spawn(server(server_config, state.clone(), shutdown.clone()), &shutdown),
+        spawn(
+            db(db_config, queries, state.clone(), shutdown.clone()),
+            &shutdown
+        ),
+        spawn(
+            server(server_config, state.clone(), shutdown.clone()),
+            &shutdown
+        ),
     );
 
-    if let Err(e) = con { error!("db error: {:#}", e); }
-    if let Err(e) = server { error!("server error: {:#}", e); }
+    if let Err(e) = con {
+        error!("db error: {:#}", e);
+    }
+    if let Err(e) = server {
+        error!("server error: {:#}", e);
+    }
 }
 
 fn register_ctrl_c(shutdown: Arc<Mutex<Shutdown>>) {
@@ -74,26 +103,37 @@ fn register_ctrl_c(shutdown: Arc<Mutex<Shutdown>>) {
 
 async fn spawn<E: Into<Error> + Send + 'static>(
     future: impl Future<Output = Result<(), E>> + Send + 'static,
-    shutdown: &Arc<Mutex<Shutdown>>
+    shutdown: &Arc<Mutex<Shutdown>>,
 ) -> Result<()> {
     match tokio::spawn(future).await {
-        Ok(Ok(v)) => { Ok(v) }
-        Ok(Err(e)) => { shutdown.lock().await.trigger(); Err(anyhow!(e)) }
-        Err(e) => { shutdown.lock().await.trigger(); Err(anyhow!(e)) }
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => {
+            shutdown.lock().await.trigger();
+            Err(anyhow!(e))
+        }
+        Err(e) => {
+            shutdown.lock().await.trigger();
+            Err(anyhow!(e))
+        }
     }
 }
 
-async fn db(config: DbConfig, queries: Vec<Subscription>, state: Arc<AppState>, shutdown: Arc<Mutex<Shutdown>>) -> Result<()> {
+async fn db(
+    config: DbConfig,
+    queries: Vec<Subscription>,
+    state: Arc<AppState>,
+    shutdown: Arc<Mutex<Shutdown>>,
+) -> Result<()> {
     let (tx, rx) = unbounded_channel();
     tokio::spawn(consume(rx, state.clone()));
 
     let state_active = {
         let state = state.clone();
-        move || { state.set_state(ConnectionState::ACTIVE) }
+        move || state.set_state(ConnectionState::ACTIVE)
     };
     let state_sync = {
         let state = state.clone();
-        move || { state.set_state(ConnectionState::SYNCHRONIZING) }
+        move || state.set_state(ConnectionState::SYNCHRONIZING)
     };
 
     loop {
@@ -125,10 +165,11 @@ async fn db(config: DbConfig, queries: Vec<Subscription>, state: Arc<AppState>, 
             .with_channel(tx.clone())
             .build()
         {
-            let Some(signal) = shutdown.lock().await.register() else { return Ok(()) };
+            let Some(signal) = shutdown.lock().await.register() else {
+                return Ok(());
+            };
             con.run_until(signal).await?;
         }
-
 
         for data in state.resource.values() {
             data.write().await.state = DataState::STALE;
@@ -138,13 +179,19 @@ async fn db(config: DbConfig, queries: Vec<Subscription>, state: Arc<AppState>, 
         }
 
         if let Some(barrier) = state.on_disconnect() {
-            let Some(signal) = shutdown.lock().await.register() else { return Ok(()) };
+            let Some(signal) = shutdown.lock().await.register() else {
+                return Ok(());
+            };
             tokio::select! { _ = signal => { return Ok(())}, _ = barrier => {} }
         }
     }
 }
 
-async fn server(config: ServerConfig, state: Arc<AppState>, shutdown: Arc<Mutex<Shutdown>>) -> Result<()> {
+async fn server(
+    config: ServerConfig,
+    state: Arc<AppState>,
+    shutdown: Arc<Mutex<Shutdown>>,
+) -> Result<()> {
     let mut app = Router::new()
         .route("/status", get(route_status))
         .route("/resource/{id}", get(route_resource_id))
@@ -166,43 +213,61 @@ async fn server(config: ServerConfig, state: Arc<AppState>, shutdown: Arc<Mutex<
 
     info!("server listening on {}", addr);
 
-    let Some(signal) = shutdown.lock().await.register() else { return Ok(()) };
+    let Some(signal) = shutdown.lock().await.register() else {
+        return Ok(());
+    };
     axum::serve(listener, app)
-        .with_graceful_shutdown(async { let _ = signal.await; })
+        .with_graceful_shutdown(async {
+            let _ = signal.await;
+        })
         .await?;
 
     Ok(())
 }
 
-#[derive(Deserialize)] struct Reconnect { reconnect: Option<bool> }
+#[derive(Deserialize)]
+struct Reconnect {
+    reconnect: Option<bool>,
+}
 
-async fn route_status(State(state): State<Arc<AppState>>, Query(query): Query<Reconnect>) -> impl IntoResponse {
-    if query.reconnect.is_some_and(|v| v) && let Some(barrier) = state.on_reconnect() {
+async fn route_status(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<Reconnect>,
+) -> impl IntoResponse {
+    if query.reconnect.is_some_and(|v| v)
+        && let Some(barrier) = state.on_reconnect()
+    {
         info!("reconnect triggered!");
         let _ = barrier.send(());
     }
 
     let body = match *state.state.lock().unwrap() {
-        ConnectionState::CONNECTING(n) =>
-            serde_json::json!({"status": format!("CONNECTING ({})", n)}),
-        ConnectionState::SYNCHRONIZING =>
-            serde_json::json!({"status": "SYNCHRONIZING"}),
-        ConnectionState::ACTIVE =>
-            serde_json::json!({"status": "ACTIVE"}),
-        ConnectionState::DISCONNECTED(_) =>
-            serde_json::json!({"status": "DISCONNECTED"}),
+        ConnectionState::CONNECTING(n) => {
+            serde_json::json!({"status": format!("CONNECTING ({})", n), "region": state.region})
+        }
+        ConnectionState::SYNCHRONIZING => {
+            serde_json::json!({"status": "SYNCHRONIZING", "region": state.region})
+        }
+        ConnectionState::ACTIVE => serde_json::json!({"status": "ACTIVE", "region": state.region}),
+        ConnectionState::DISCONNECTED(_) => {
+            serde_json::json!({"status": "DISCONNECTED", "region": state.region})
+        }
     };
     Json(body)
 }
 
-async fn route_resource_id(Path(id): Path<i32>, State(state): State<Arc<AppState>>) -> impl IntoResponse {
+async fn route_resource_id(
+    Path(id): Path<i32>,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
     let Some(resource) = state.resource.get(&id) else {
-        return Err((StatusCode::NOT_FOUND, format!("Resource ID not found: {}", id)))
+        return Err((
+            StatusCode::NOT_FOUND,
+            format!("Resource ID not found: {}", id),
+        ));
     };
     let data = resource.read().await;
-    let nodes = data.nodes
-        .values()
-        .collect::<Vec<_>>();
+    let nodes = data.nodes.values().collect::<Vec<_>>();
 
     Ok(Json(serde_json::json!({
         "type": "FeatureCollection",
@@ -214,12 +279,16 @@ async fn route_resource_id(Path(id): Path<i32>, State(state): State<Arc<AppState
     })))
 }
 
-async fn route_enemy_id(Path(id): Path<i32>, State(state): State<Arc<AppState>>) -> impl IntoResponse {
+async fn route_enemy_id(
+    Path(id): Path<i32>,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
     let Some(enemy) = state.enemy.get(&id) else {
-        return Err((StatusCode::NOT_FOUND, format!("Enemy ID not found: {}", id)))
+        return Err((StatusCode::NOT_FOUND, format!("Enemy ID not found: {}", id)));
     };
     let data = enemy.read().await;
-    let nodes = data.nodes
+    let nodes = data
+        .nodes
         .values()
         .map(|[x, z]| [*x as f64 / 1_000_f64, *z as f64 / 1_000_f64])
         .collect::<Vec<_>>();

@@ -64,6 +64,7 @@ pub struct AppState {
     pub state: SyncMutex<ConnectionState>,
     pub resource: HashMap<i32, RwLock<EntityState>>,
     pub enemy: HashMap<i32, RwLock<EntityState>>,
+    pub region: u8,
 }
 
 impl AppState {
@@ -140,6 +141,7 @@ impl AppConfig {
             state: SyncMutex::new(ConnectionState::CONNECTING(5)),
             resource: HashMap::with_capacity(self.resources.len()),
             enemy: HashMap::with_capacity(self.enemies.len()),
+            region: self.db.region,
         };
 
         for Entity { id, name: _, properties } in self.resources {
