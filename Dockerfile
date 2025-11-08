@@ -1,15 +1,15 @@
-FROM rust:1.91.0-bookworm AS builder
+FROM rust:1.91.0-trixie AS builder
 WORKDIR /app
 COPY Cargo.* /app
 COPY src/ ./src
 RUN cargo build --release -p nodeindex
 
-FROM python:3.14-slim-bookworm AS config
+FROM python:3.14-slim-trixie AS config
 WORKDIR /app
 COPY generate.py /app/
 RUN python generate.py
 
-FROM debian:bookworm-slim AS runner
+FROM debian:trixie-slim AS runner
 
 LABEL org.opencontainers.image.source="https://github.com/BitCraftToolBox/bitcraft-nodeindex"
 LABEL org.opencontainers.image.description="Node tracking backend for bitcraftmap.com"
