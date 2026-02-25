@@ -174,8 +174,8 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bindings"
-version = "2026.2.6"
-source = "git+https://github.com/BitCraftToolBox/cacheless-rust-bindings?branch=main#1c42a6381e69e1791fafc2e3d5e116c4a038e0d2"
+version = "2026.2.25"
+source = "git+https://github.com/BitCraftToolBox/cacheless-rust-bindings?branch=main#03dd3b484d66d6d6a6c47394d7d99a5f12ccc8d6"
 dependencies = [
  "spacetimedb-sdk",
  "tokio",
