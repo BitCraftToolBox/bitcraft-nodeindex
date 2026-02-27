@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bindings = { git = "https://github.com/xCausxn/cacheless-rust-bindings", branch = "xcausxn" }
+bindings = { git = "https://github.com/BitCraftToolBox/cacheless-rust-bindings", branch = "main" }
 anyhow = { version = "1.0.98" }
 hashbrown = { version = "0.16.1" }
 serde = { version = "1.0.219" }
