@@ -165,7 +165,7 @@ impl<M: SpacetimeModule> WithDbConfig for DbConnectionBuilder<M>
 {
     fn configure(self, config: &DbConfig) -> Self {
         self.with_uri("https://bitcraft-early-access.spacetimedb.com")
-            .with_module_name(format!("bitcraft-{}", config.region))
+            .with_module_name(format!("bitcraft-live-{}", config.region))
             .with_token(Some(&config.token))
     }
 }
